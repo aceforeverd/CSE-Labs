@@ -214,9 +214,10 @@ void inode_manager::free_inode(uint32_t inum)
         return;
     }
 
-    for (blockid_t id : i_node->blocks) {
-        if (id != 0) {
-            this->bm->free_block(id);
+    uint32_t i;
+    for (i = 0; i <= NDIRECT; i++) {
+        if (i_node->blocks[i] != 0) {
+            this->bm->free_block(i_node->blocks[i]);
         }
     }
     bzero(i_node, sizeof(inode_t));
@@ -227,9 +228,9 @@ void inode_manager::free_inode(uint32_t inum)
 void inode_manager::free_indirect_block(blockid_t id) {
     uint32_t indirect_buf[NINDIRECT];
     this->bm->read_block(id, (char *) indirect_buf);
-    for (blockid_t b_id : indirect_buf) {
-        if (b_id != 0) {
-            this->bm->free_block(b_id);
+    for (uint32_t id = 0; id < NINDIRECT; id ++) {
+        if (indirect_buf[id] != 0) {
+            this->bm->free_block(indirect_buf[id]);
         }
     }
 }
@@ -239,8 +240,8 @@ void inode_manager::echo_inode(inode_t *i_node) {
     printf("\t\ttype: %u, size: %u\n", i_node->type, i_node->size);
     printf("\t\taccess time: %lu, ctime: %lu, mtime: %lu\n", i_node->atime, i_node->ctime, i_node->mtime);
     printf("\t\tblocks: ");
-    for (auto i : i_node->blocks) {
-        printf(" %u ", i);
+    for (uint32_t ii = 0; ii <= NDIRECT; ii++) {
+        printf(" %u ", i_node->blocks[ii]);
     }
     printf("\n");
 }

@@ -75,8 +75,8 @@ blockid_t block_manager::alloc_block()
             return this->next_alloc - 1;
         } else {
             this->next_alloc ++;
-            if (this->next_alloc == BLOCK_NUM) {
-                this->next_alloc = 100;
+            if (this->next_alloc == BLOCK_NUM + this->first_block) {
+                this->next_alloc = this->first_block;
             }
             if (this->next_alloc == original_next) {
                 fprintf(stderr, "!!!!!!no more space to alloc\n");
@@ -93,57 +93,6 @@ bool block_manager::is_free(uint32_t pos) {
     char ch = buf[pos % BLOCK_SIZE];
     std::bitset<8> bit_set(ch);
     return !bit_set.test(pos % 8);
-}
-
-int block_manager::first_free_bit_of_char(char ch) {
-    for (int i = 0; i < 8; i++) {
-        if (((~ch) >> (7 - i)) & 0x1) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-int block_manager::first_free_char_of_buf(char *buf) {
-    int i = 0;
-    char *buffer = buf;
-    while (*buffer == char(255) ) {
-        if (*buffer == '\0' || i > BLOCK_SIZE) {
-            /* end of string */
-            return -1;
-        }
-        i ++;
-        buffer ++;
-    }
-
-    return i;
-}
-
-
-int block_manager::mask_bit(char *ch, int pos) {
-    if (pos < 0 || pos > 7) {
-        return -1;
-    }
-
-    if (pos == 7) {
-        *ch |= 0x1;
-    } else {
-        *ch |= ((0x1 << (6 - pos)) + 1);
-    }
-    return 0;
-}
-
-int block_manager::unmask_bit(char *ch, int pos) {
-    if (pos < 0 || pos > 7) {
-        return -1;
-    }
-
-    if (pos == 7) {
-        *ch |= (~(0x1));
-    } else {
-        *ch |= (~((0x1 << (6 - pos)) + 1));
-    }
-    return 0;
 }
 
 void block_manager::free_block(uint32_t id)
@@ -175,8 +124,9 @@ block_manager::block_manager()
     sb.size = DISK_SIZE;
     sb.nblocks = BLOCK_NUM;
     sb.ninodes = INODE_NUM;
+    first_block = sb.nblocks / (BPB) + INODE_NUM + 3;
 
-    this->next_alloc = 100;
+    this->next_alloc = first_block;
 }
 
 void block_manager::read_block(uint32_t id, char *buf)
@@ -240,16 +190,14 @@ uint32_t inode_manager::alloc_inode(uint32_t type)
 
     i_node->type = type;
     i_node->size = 0;
-    i_node->atime
-            = i_node->ctime
-            = i_node->mtime
-            = (unsigned int)time(NULL);
+    i_node->atime = time(NULL);
+    i_node->ctime = time(NULL);
+    i_node->mtime = time(NULL);
 
     this->put_inode(this->next_inode_num, i_node);
     free(i_node);
     this->next_inode_num ++;
     return this->next_inode_num - 1;
-
 }
 
 void inode_manager::free_inode(uint32_t inum)
@@ -266,9 +214,10 @@ void inode_manager::free_inode(uint32_t inum)
         return;
     }
 
-    for (blockid_t id : i_node->blocks) {
-        if (id != 0) {
-            this->bm->free_block(id);
+    uint32_t i;
+    for (i = 0; i <= NDIRECT; i++) {
+        if (i_node->blocks[i] != 0) {
+            this->bm->free_block(i_node->blocks[i]);
         }
     }
     bzero(i_node, sizeof(inode_t));
@@ -279,9 +228,9 @@ void inode_manager::free_inode(uint32_t inum)
 void inode_manager::free_indirect_block(blockid_t id) {
     uint32_t indirect_buf[NINDIRECT];
     this->bm->read_block(id, (char *) indirect_buf);
-    for (blockid_t b_id : indirect_buf) {
-        if (b_id != 0) {
-            this->bm->free_block(b_id);
+    for (uint32_t id = 0; id < NINDIRECT; id ++) {
+        if (indirect_buf[id] != 0) {
+            this->bm->free_block(indirect_buf[id]);
         }
     }
 }
@@ -289,10 +238,10 @@ void inode_manager::free_indirect_block(blockid_t id) {
 void inode_manager::echo_inode(inode_t *i_node) {
     printf("\tdumping inode info\n");
     printf("\t\ttype: %u, size: %u\n", i_node->type, i_node->size);
-    printf("\t\taccess time: %u, ctime: %u, mtime: %u\n", i_node->atime, i_node->ctime, i_node->mtime);
+    printf("\t\taccess time: %lu, ctime: %lu, mtime: %lu\n", i_node->atime, i_node->ctime, i_node->mtime);
     printf("\t\tblocks: ");
-    for (auto i : i_node->blocks) {
-        printf(" %u ", i);
+    for (uint32_t ii = 0; ii <= NDIRECT; ii++) {
+        printf(" %u ", i_node->blocks[ii]);
     }
     printf("\n");
 }
@@ -400,7 +349,7 @@ void inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
     }
 
     /* update inode */
-    i_node->atime = (unsigned int) time(NULL);
+    i_node->atime = time(NULL);
     this->put_inode(inum, i_node);
 }
 
@@ -443,8 +392,9 @@ void inode_manager::write_file(uint32_t inum, const char *buf, int size)
      * is larger or smaller than the size of original inode.
      * you should free some blocks if necessary.
      */
+    std::cout << "===== >> buf going to write for " << inum << ":'" << buf << "'" << std::endl;
     inode_t *i_node = this->get_inode(inum);
-    if (i_node == NULL || size <= 0) {
+    if (i_node == NULL || size < 0) {
         return;
     }
 
@@ -499,8 +449,8 @@ void inode_manager::write_file(uint32_t inum, const char *buf, int size)
 
     /* update inode */
     i_node->size = (unsigned int)size;
-    i_node->atime = i_node->ctime = i_node->mtime =
-            (unsigned int) time(NULL);
+    i_node->ctime = time(NULL);
+    i_node->mtime = time(NULL);
     this->put_inode(inum, i_node);
 }
 
@@ -557,7 +507,7 @@ void inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
      * note: get the attributes of inode inum.
      * you can refer to "struct attr" in extent_protocol.h
      */
-    inode *node = this->get_inode(inum);
+    inode_t *node = this->get_inode(inum);
     if (node == NULL) {
         return;
     }
@@ -567,6 +517,22 @@ void inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
     a.ctime = node->ctime;
     a.mtime = node->mtime;
     a.atime = node->atime;
+}
+
+int inode_manager::setattr(uint32_t inum, extent_protocol::attr &a) {
+    inode_t *node = this->get_inode(inum);
+    if (node == NULL) {
+        return -1;
+    }
+
+    node->size = a.size;
+    node->type = a.type;
+    node->atime = a.atime;
+    node->ctime = a.ctime;
+    node->mtime = a.mtime;
+    this->put_inode(inum, node);
+
+    return 0;
 }
 
 void inode_manager::remove_file(uint32_t inum)

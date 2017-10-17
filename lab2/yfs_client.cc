@@ -11,8 +11,8 @@
 void echo_dir_list(std::list<yfs_client::dirent> list) {
     /* debug */
     std::cout << "echo dir info ..." << std::endl;
-    for (auto i : list) {
-        std::cout << i.inum << " '" << i.name << "'" << std::endl;
+    for (std::list<yfs_client::dirent>::iterator it = list.begin(); it != list.end(); it++) {
+        std::cout << it->inum << " '" << it->name << "'" << std::endl;
     }
     std::cout << "echo done ." << std::endl;
 
@@ -224,8 +224,6 @@ int yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out
 }
 
 int yfs_client::create_symlink(inum parent, const char *src, const char *dest, inum &ino_out) {
-    std::cout << "@@@@dest: " << dest << " | src: " << src << std::endl;
-
     bool found = false;
     inum ino;
     lookup(parent, dest, found, ino);
@@ -245,7 +243,6 @@ int yfs_client::create_symlink(inum parent, const char *src, const char *dest, i
     }
 
     this->add_file_to_dir(parent, ino_out, dest);
-    std::cout << "@@@@@create symlink done" << std::endl;
     return OK;
 }
 
@@ -282,7 +279,7 @@ int yfs_client::remove_file_from_dir(uint32_t dir, const char *name) {
     this->readdir(dir, list);
 
     std::list<dirent_t>::iterator is;
-    for (auto it = list.begin(); it != list.end(); it ++) {
+    for (std::list<dirent_t>::iterator it = list.begin(); it != list.end(); it ++) {
         if (it->name == name) {
             is = it;
         }
@@ -298,7 +295,7 @@ int yfs_client::remove_file_from_dir(uint32_t dir, inum ino) {
     this->readdir(dir, list);
 
     std::list<dirent_t>::iterator is;
-    for (auto it = list.begin(); it != list.end(); it++ ) {
+    for (std::list<dirent>::iterator it = list.begin(); it != list.end(); it++ ) {
         if (it->inum == ino) {
             is = it;
             break;
@@ -355,10 +352,10 @@ int yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out
     found = false;
     std::list<dirent> dir_list;
     this->readdir(parent, dir_list);
-    for (auto dir_obj : dir_list) {
-        if (dir_obj.name.compare(s_name) == 0) {
+    for (std::list<dirent>::iterator dir_obj = dir_list.begin(); dir_obj != dir_list.end(); dir_obj ++) {
+        if (dir_obj->name.compare(s_name) == 0) {
             found = true;
-            ino_out = dir_obj.inum;
+            ino_out = dir_obj->inum;
             return EXIST;
         }
     }
@@ -399,14 +396,14 @@ int yfs_client::readdir(inum dir, std::list<dirent> &list)
     return OK;
 }
 
-int yfs_client::write_dir(inum ino, const std::list<dirent> list) {
+int yfs_client::write_dir(inum ino, std::list<dirent> list) {
     std::cout << "list to write into dir" << std::endl;
     echo_dir_list(list);
 
     std::stringstream ss(" ");
-    for (dirent_t dir_obj : list) {
-        ss << dir_obj.inum << " " << dir_obj.name.length()
-                                  << " " << dir_obj.name << "\n";
+    for (std::list<dirent>::iterator dir_obj = list.begin(); dir_obj != list.end(); dir_obj ++) {
+        ss << dir_obj->inum << " " << dir_obj->name.length()
+                                  << " " << dir_obj->name << "\n";
         std::cout << "buf_tmp & buf: " << ss.str() << std::endl;
     }
 
