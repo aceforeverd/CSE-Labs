@@ -49,8 +49,7 @@ private:
     int remove_file_from_dir(uint32_t dir, inum ino);
 
 public:
-    yfs_client();
-    yfs_client(std::string, std::string);
+    yfs_client(std::string extent_dst);
 
     bool isfile(inum);
     bool isdir(inum);
@@ -68,7 +67,7 @@ public:
     int read_symlink(inum link_number, std::string & buf_out);
 
     int readdir(inum, std::list<dirent> &);
-    int write_dir(inum, const std::list<dirent>);
+    int write_dir(inum, std::list<dirent>);
     int write(inum, size_t, off_t, const char *, size_t &);
     int read(inum, size_t, off_t, std::string &);
     int unlink(inum,const char *);
