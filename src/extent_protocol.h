@@ -19,8 +19,14 @@ class extent_protocol {
 
         enum types {
             T_DIR = 1,
-            T_FILE
+            T_FILE,
+            T_SYMLINK,
+            T_DEVICE,
+            T_SOCKET,
+            T_PIPE,
+            T_UNKNOWN
         };
+        typedef enum types type_t;
 
         struct attr {
             uint32_t type;
@@ -30,6 +36,8 @@ class extent_protocol {
             unsigned int size;
         };
 };
+
+
 
     inline unmarshall &
 operator>>(unmarshall &u, extent_protocol::attr &a)
