@@ -4,6 +4,8 @@
 #define extent_protocol_h
 
 #include "rpc.h"
+// #include <linux/types.h>
+
 
 class extent_protocol {
     public:
@@ -14,27 +16,31 @@ class extent_protocol {
             put = 0x6001,
             get,
             getattr,
+            setattr,
             remove,
             create
         };
 
-        enum types {
+        typedef enum types {
             T_DIR = 1,
             T_FILE,
             T_SYMLINK,
             T_DEVICE,
             T_SOCKET,
             T_PIPE,
-            T_UNKNOWN
-        };
-        typedef enum types type_t;
+            T_UNKNOWN,
+            T_NOTEXIST
+        } type_t;
 
         struct attr {
-            uint32_t type;
+            unsigned short type;
+            unsigned long long size;
             unsigned int atime;
             unsigned int mtime;
             unsigned int ctime;
-            unsigned int size;
+            unsigned short mode;
+            unsigned short uid;
+            unsigned short gid;
         };
 };
 
@@ -48,6 +54,9 @@ operator>>(unmarshall &u, extent_protocol::attr &a)
     u >> a.mtime;
     u >> a.ctime;
     u >> a.size;
+    u >> a.mode;
+    u >> a.uid;
+    u >> a.gid;
     return u;
 }
 
@@ -59,6 +68,9 @@ operator<<(marshall &m, extent_protocol::attr a)
     m << a.mtime;
     m << a.ctime;
     m << a.size;
+    m << a.mode;
+    m << a.uid;
+    m << a.gid;
     return m;
 }
 

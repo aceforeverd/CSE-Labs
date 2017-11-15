@@ -190,9 +190,9 @@ uint32_t inode_manager::alloc_inode(uint32_t type)
 
     i_node->type = type;
     i_node->size = 0;
-    i_node->atime = time(NULL);
-    i_node->ctime = time(NULL);
-    i_node->mtime = time(NULL);
+    i_node->atime = (unsigned int) time(NULL);
+    i_node->ctime = (unsigned int) time(NULL);
+    i_node->mtime = (unsigned int) time(NULL);
 
     this->put_inode(this->next_inode_num, i_node);
     free(i_node);
@@ -237,8 +237,8 @@ void inode_manager::free_indirect_block(blockid_t id) {
 
 void inode_manager::echo_inode(inode_t *i_node) {
     printf("\tdumping inode info\n");
-    printf("\t\ttype: %u, size: %u\n", i_node->type, i_node->size);
-    printf("\t\taccess time: %lu, ctime: %lu, mtime: %lu\n", i_node->atime, i_node->ctime, i_node->mtime);
+    printf("\t\ttype: %u, size: %llu\n", i_node->type, i_node->size);
+    printf("\t\taccess time: %u, ctime: %u, mtime: %u\n", i_node->atime, i_node->ctime, i_node->mtime);
     printf("\t\tblocks: ");
     for (uint32_t ii = 0; ii <= NDIRECT; ii++) {
         printf(" %u ", i_node->blocks[ii]);
@@ -275,6 +275,10 @@ struct inode* inode_manager::get_inode(uint32_t inum)
 
     ino = (struct inode*)malloc(sizeof(struct inode));
     *ino = *ino_disk;
+
+    /* here I did not change the atime
+     * it's somewhat like noatime option in linux
+     */
 
     return ino;
 }
@@ -320,7 +324,7 @@ void inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
         return;
     }
 
-    uint32_t node_size = i_node->size;
+    unsigned long long node_size = i_node->size;
     *buf_out = (char *)malloc(node_size);
     bzero(*buf_out, node_size);
     char *buf_ptr = *buf_out;
@@ -349,7 +353,7 @@ void inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
     }
 
     /* update inode */
-    i_node->atime = time(NULL);
+    i_node->atime = (unsigned int) time(NULL);
     this->put_inode(inum, i_node);
 }
 
@@ -400,8 +404,8 @@ void inode_manager::write_file(uint32_t inum, const char *buf, int size)
 
     char *buf_ptr = (char *) buf;
 
-    unsigned int written_size = 0;
-    unsigned int original_size = i_node->size;
+    unsigned long long written_size = 0;
+    unsigned long long original_size = i_node->size;
     unsigned int i;
     char tmp[BLOCK_SIZE];
     for (i = 0; i <= NDIRECT; ++i) {
@@ -448,21 +452,22 @@ void inode_manager::write_file(uint32_t inum, const char *buf, int size)
     }
 
     /* update inode */
-    i_node->size = (unsigned int)size;
-    i_node->ctime = time(NULL);
-    i_node->mtime = time(NULL);
+    i_node->size = (unsigned long long) size;
+    i_node->atime = (unsigned int) time(NULL);
+    i_node->ctime = (unsigned int) time(NULL);
+    i_node->mtime = (unsigned int) time(NULL);
     this->put_inode(inum, i_node);
 }
 
 void inode_manager::write_indirect_block(blockid_t id, char *buf,
-                                         unsigned int *written_size,
+                                         unsigned long long *written_size,
                                          unsigned int real_size,
-                                         unsigned int original_size) {
+                                         unsigned long long original_size) {
     char *buf_ptr = buf;
     uint32_t indirect_buf[NINDIRECT];
     this->bm->read_block(id, (char *)indirect_buf);
 
-    unsigned int allocated_indirect_block;
+    unsigned long long allocated_indirect_block;
     if (original_size > *written_size) {
         allocated_indirect_block = (original_size - *written_size) / BLOCK_SIZE;
     } else {
@@ -488,6 +493,7 @@ void inode_manager::write_indirect_block(blockid_t id, char *buf,
 
         i++;
     }
+
     /* free block if necessary */
     unsigned int j;
     for (j = i; j < NINDIRECT; ++j) {
@@ -502,13 +508,9 @@ void inode_manager::write_indirect_block(blockid_t id, char *buf,
 
 void inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
 {
-    /*
-     * your lab1 code goes here.
-     * note: get the attributes of inode inum.
-     * you can refer to "struct attr" in extent_protocol.h
-     */
     inode_t *node = this->get_inode(inum);
     if (node == NULL) {
+        a.type = extent_protocol::T_NOTEXIST;
         return;
     }
 
@@ -517,6 +519,9 @@ void inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
     a.ctime = node->ctime;
     a.mtime = node->mtime;
     a.atime = node->atime;
+    a.uid = node->uid;
+    a.gid = node->gid;
+    a.mode = node->mode;
 }
 
 int inode_manager::setattr(uint32_t inum, extent_protocol::attr &a) {
@@ -525,11 +530,22 @@ int inode_manager::setattr(uint32_t inum, extent_protocol::attr &a) {
         return -1;
     }
 
-    node->size = a.size;
-    node->type = a.type;
-    node->atime = a.atime;
-    node->ctime = a.ctime;
-    node->mtime = a.mtime;
+    // node->size = a.size;
+    if (a.mode) {
+        node->mode = a.mode;
+    }
+    if (a.uid) {
+        node->uid = a.uid;
+    }
+    if (a.gid) {
+        node->gid = a.gid;
+    }
+
+    /* atime, ctime, mtime, type can't not modified directly
+     * it will modified automatically by the inode manager
+     * size will auto changed after write new content to the file
+     */
+    node->ctime = (unsigned int) time(NULL);
     this->put_inode(inum, node);
 
     return 0;
@@ -537,10 +553,5 @@ int inode_manager::setattr(uint32_t inum, extent_protocol::attr &a) {
 
 void inode_manager::remove_file(uint32_t inum)
 {
-    /*
-     * your lab1 code goes here
-     * note: you need to consider about both the data block and inode of the file
-     * do not forget to free memory if necessary.
-     */
     this->free_inode(inum);
 }
