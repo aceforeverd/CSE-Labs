@@ -28,6 +28,7 @@ public:
     int getattr(extent_protocol::extentid_t id, extent_protocol::attr &);
     int setattr(extent_protocol::extentid_t id, extent_protocol::attr &);
     int remove(extent_protocol::extentid_t id, int &);
+
 };
 
 #endif 

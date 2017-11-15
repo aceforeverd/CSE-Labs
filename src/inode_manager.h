@@ -80,11 +80,19 @@ class block_manager {
 
 typedef struct inode {
     //short type;
-    unsigned int type;
-    unsigned int size;
-    unsigned long atime;
-    unsigned long mtime;
-    unsigned long ctime;
+    unsigned short type;
+    unsigned long long size;
+
+    // access time
+    unsigned int atime;
+    // modify time, change only when content of the file modified
+    unsigned int mtime;
+    // change time, change either attribute or content of the file modified
+    unsigned int ctime;
+
+    unsigned short mode;
+    unsigned short uid;
+    unsigned short gid;
     blockid_t blocks[NDIRECT+1];   // Data block addresses
 } inode_t;
 
@@ -94,7 +102,7 @@ class inode_manager {
         struct inode* get_inode(uint32_t inum);
         void put_inode(uint32_t inum, struct inode *ino);
         void read_indirect_block(blockid_t id, char **buf_out, int *size, uint32_t total_size);
-        void write_indirect_block(blockid_t id, char *buf, unsigned int *written_size, unsigned int real_size, unsigned int original_size);
+        void write_indirect_block(blockid_t id, char *buf, unsigned long long *written_size, unsigned int real_size, unsigned long long original_size);
         void free_indirect_block(blockid_t id);
 
         uint32_t next_inode_num;
