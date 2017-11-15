@@ -14,7 +14,8 @@ class extent_protocol {
             put = 0x6001,
             get,
             getattr,
-            remove
+            remove,
+            create
         };
 
         enum types {
@@ -39,7 +40,7 @@ class extent_protocol {
 
 
 
-    inline unmarshall &
+inline unmarshall &
 operator>>(unmarshall &u, extent_protocol::attr &a)
 {
     u >> a.type;
@@ -50,7 +51,7 @@ operator>>(unmarshall &u, extent_protocol::attr &a)
     return u;
 }
 
-    inline marshall &
+inline marshall &
 operator<<(marshall &m, extent_protocol::attr a)
 {
     m << a.type;
