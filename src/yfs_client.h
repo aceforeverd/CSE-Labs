@@ -4,6 +4,8 @@
 #include <string>
 #include <cstring>
 #include "extent_client.h"
+#include "lock_protocol.h"
+#include "lock_client.h"
 #include <vector>
 #include <list>
 #include <sstream>
@@ -12,6 +14,7 @@
 
 class yfs_client {
     extent_client *ec;
+    lock_client *lc;
 public:
 
     typedef unsigned long long inum;
@@ -50,6 +53,7 @@ private:
 
 public:
     yfs_client(std::string extent_dst);
+    yfs_client(std::string extent_dst, std::string lock_dst);
 
     bool isfile(inum);
     bool isdir(inum);

@@ -25,6 +25,13 @@ yfs_client::yfs_client(std::string extent_dst) {
         printf("error init root dir\n"); // XYB: init root dir
 }
 
+yfs_client::yfs_client(std::string extent_dst, std::string lock_dst) {
+    ec = new extent_client(extent_dst);
+    lc = new lock_client(lock_dst);
+    if (ec->put(1, "") != extent_protocol::OK)
+        printf("error init root dir\n"); // XYB: init root dir
+}
+
 /* string => unsigned long long */
 yfs_client::inum yfs_client::n2i(std::string n)
 {
@@ -162,16 +169,21 @@ int yfs_client::setattr(inum ino, uint32_t size)
      * note: get the content of inode ino, and modify its content
      * according to the size (<, =, or >) content length.
      */
+    lc->acquire(ino);
+
+    int r = OK;
     std::string buf;
     fileinfo info;
     if (getfile(ino, info) != OK) {
         std::cerr << "failed to get file info" << std::endl;
-        return IOERR;
+        r = IOERR;
+        goto release;
     }
 
     if (read(ino, info.size, 0, buf) != OK) {
         std::cerr << "failed to read file buf" << std::endl;
-        return IOERR;
+        r = IOERR;
+        goto release;
     }
 
     if (info.size > size) {
@@ -181,10 +193,13 @@ int yfs_client::setattr(inum ino, uint32_t size)
     }
 
     if (ec->put(ino, buf) != extent_protocol::OK) {
-        return IOERR;
+        r = IOERR;
+        goto release;
     }
 
-    return OK;
+    release:
+    lc->release(ino);
+    return r;
 }
 
 int yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
@@ -194,50 +209,70 @@ int yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out
      * note: lookup is what you need to check if file exist;
      * after create file or dir, you must remember to modify the parent infomation.
      */
+    lc->acquire(parent);
     /* check parent is diectory */
-    if (!isdir(parent)) {
-        std::cerr << "parent is not a directory" << std::endl;
-        return NOENT;
-    }
-
+    int r = OK;
     bool found = false;
     inum ino;
+
+    if (!isdir(parent)) {
+        std::cerr << "parent is not a directory" << std::endl;
+        r = NOENT;
+        goto release;
+    }
+
     this->lookup(parent, name, found, ino);
     if (found) {
         std::cerr << "failed to create: file with same name exist" << std::endl;
-        return EXIST;
+        r = EXIST;
+        goto release;
     }
 
     if (ec->create(extent_protocol::T_FILE, ino_out) != extent_protocol::OK) {
         std::cerr << "failed to create new file" << std::endl;
-        return IOERR;
+        r = IOERR;
+        goto release;
     }
 
     this->add_file_to_dir((uint32_t)parent, (uint32_t)ino_out, name);
-    return OK;
+
+    release:
+    lc->release(parent);
+    return r;
 }
 
 int yfs_client::create_symlink(inum parent, const char *src, const char *dest, inum &ino_out) {
+    lc->acquire(parent);
+
+    int r = OK;
+
     bool found = false;
     inum ino;
+    std::string buf(src);
+
     lookup(parent, dest, found, ino);
     if (found) {
-        return EXIST;
+        r = EXIST;
+        goto release;
     }
 
     if (ec->create(extent_protocol::T_SYMLINK, ino_out) != extent_protocol::OK) {
         std::cerr << "failed to create new symlink file" << std::endl;
-        return IOERR;
+        r = IOERR;
+        goto release;
     }
 
     /* add content to linker file */
-    std::string buf(src);
     if (ec->put(ino_out, buf) != extent_protocol::OK) {
-        return IOERR;
+        r = IOERR;
+        goto release;
     }
 
     this->add_file_to_dir(parent, ino_out, dest);
-    return OK;
+
+    release:
+    lc->release(parent);
+    return r;
 }
 
 int yfs_client::read_symlink(inum link_number, std::string &buf_out) {
@@ -308,25 +343,35 @@ int yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
      * note: lookup is what you need to check if directory exist;
      * after create file or dir, you must remember to modify the parent infomation.
      */
-    if (!isdir(parent)) {
-        std::cerr << "parent is not a directory" << std::endl;
-        return NOENT;
-    }
+    lc->acquire(parent);
 
+    int r = OK;
     bool found = false;
     inum ino;
+
+    if (!isdir(parent)) {
+        std::cerr << "parent is not a directory" << std::endl;
+        r = NOENT;
+        goto release;
+    }
+
     this->lookup(parent, name, found, ino);
     if (found) {
         std::cerr << "failed to mkdir: directory with same name exist" << std::endl;
-        return EXIST;
+        r = EXIST;
+        goto release;
     }
 
     if (ec->create(extent_protocol::T_DIR, ino_out) != extent_protocol::OK) {
-        return IOERR;
+        r = IOERR;
+        goto release;
     }
 
     this->add_file_to_dir(parent, ino_out, name);
-    return OK;
+
+    release:
+    lc->release(parent);
+    return r;
 }
 
 int yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
@@ -432,16 +477,24 @@ int yfs_client::write(inum ino, size_t size, off_t off, const char *data,
      * note: write using ec->put().
      * when off > length of original file, fill the holes with '\0'.
      */
+    lc->acquire(ino);
+
+    int r = OK;
+    size_t length;
+    std::string buf;
+
     if (off < 0) {
         std::cerr << "position unreachable" << std::endl;
-        return IOERR;
+        r = IOERR;
+        goto release;
     }
-    std::string buf;
+
     if (ec->get(ino, buf) != extent_protocol::OK) {
         std::cerr << "error while reading inode data" << std::endl;
-        return IOERR;
+        r = IOERR;
+        goto release;
     }
-    size_t length = buf.size();
+    length = buf.size();
 
     if (off + size > length) {
         buf.resize(off + size, '\0');
@@ -450,10 +503,14 @@ int yfs_client::write(inum ino, size_t size, off_t off, const char *data,
 
     if (ec->put(ino, buf) != extent_protocol::OK) {
         std::cerr << "error while writing the data" << std::endl;
-        return IOERR;
+        r = IOERR;
+        goto release;
     }
     bytes_written = size;
-    return OK;
+
+    release:
+    lc->release(ino);
+    return r;
 }
 
 int yfs_client::unlink(inum parent, const char *name)
@@ -463,24 +520,34 @@ int yfs_client::unlink(inum parent, const char *name)
      * note: you should remove the file using ec->remove,
      * and update the parent directory content.
      */
+    lc->acquire(parent);
+
+    int r = OK;
+
     inum file;
     bool found;
     this->lookup(parent, name, found, file);
     if (!found) {
         std::cerr << "file name = " << name << "not found" << std::endl;
-        return NOENT;
+        r = NOENT;
+        goto release;
     }
 
     if (isdir(file)) {
         /* currently not support remove dir */
-        return EXIST;
+        r = EXIST;
+        goto release;
     }
 
     if (ec->remove(file) != extent_protocol::OK) {
         std::cerr << "error happen while unlinking the file" << std::endl;
-        return IOERR;
+        r = IOERR;
+        goto release;
     }
     this->remove_file_from_dir(parent, file);
-    return OK;
+
+    release:
+    lc->release(parent);
+    return r;
 }
 
