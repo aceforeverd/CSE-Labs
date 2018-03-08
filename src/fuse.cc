@@ -203,7 +203,7 @@ fuseserver_read(fuse_req_t req, fuse_ino_t ino, size_t size,
     // Change the above "#if 0" to "#if 1", and your code goes here
     int r;
     if ((r = yfs->read(ino, size, off, buf)) == yfs_client::OK) {
-        fuse_reply_buf(req, buf.data(), buf.size());
+        fuse_reply_buf(req, buf.data(), buf.size());    
     } else {
 		if (r == yfs_client::NOPEM) {
 			fuse_reply_err(req, EACCES);
@@ -347,7 +347,7 @@ void fuseserver_readlink(fuse_req_t req, fuse_ino_t ino) {
 
 }
 
-void fuseserver_mknod( fuse_req_t req, fuse_ino_t parent,
+void fuseserver_mknod( fuse_req_t req, fuse_ino_t parent, 
         const char *name, mode_t mode, dev_t rdev ) {
     struct fuse_entry_param e;
     yfs_client::status ret;
@@ -476,9 +476,8 @@ void fuseserver_open(fuse_req_t req, fuse_ino_t ino,
 //
 // Ignore mode.
 //
-void fuseserver_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
-        mode_t mode)
-{
+void fuseserver_mkdir(fuse_req_t req, fuse_ino_t parent,
+                      const char *name, mode_t mode) {
     struct fuse_entry_param e;
     // In yfs, timeouts are always set to 0.0, and generations are always set to 0
     e.attr_timeout = 0.0;
@@ -491,7 +490,7 @@ void fuseserver_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
     // Change the above line to "#if 1", and your code goes here
     yfs_client::status ret;
     if (( ret = fuseserver_createhelper( parent, name, mode, &e, extent_protocol::T_DIR)) == yfs_client::OK) {
-        fuse_reply_entry(req, &e);
+        fuse_reply_entry(req, &e);    
     } else {
         if (ret == yfs_client::EXIST) {
             fuse_reply_err(req, EEXIST);
@@ -550,17 +549,19 @@ fuseserver_statfs(fuse_req_t req)
 void sig_handler(int no) {
     switch (no) {
         case SIGINT:
-            printf("commit a new version\n");
-            yfs->commit_current();
+            //printf("commit a new version\n");
+            //yfs->commit_current();
             break;
         case SIGUSR1:
-            printf("to previous version\n");
-            yfs->commit_rollback();
+            //printf("to previous version\n");
+            //yfs->commit_rollback();
             break;
         case SIGUSR2:
-            printf("to next version\n");
-            yfs->commit_forward();
+            //printf("to next version\n");
+            //yfs->commit_forward();
             break;
+        default:
+            return;
     }
 }
 
@@ -649,7 +650,7 @@ main(int argc, char *argv[])
 
     fuse_args args = FUSE_ARGS_INIT( fuse_argc, (char **) fuse_argv );
     int foreground;
-    int res = fuse_parse_cmdline( &args, &mountpoint, 0 /*multithreaded*/,
+    int res = fuse_parse_cmdline( &args, &mountpoint, 0 /*multithreaded*/, 
             &foreground );
     if( res == -1 ) {
         fprintf(stderr, "fuse_parse_cmdline failed\n");

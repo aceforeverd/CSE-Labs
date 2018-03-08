@@ -52,7 +52,7 @@ lock_server::release(int clt, lock_protocol::lockid_t lid, int &r)
         stat_table.erase(lid);
         pthread_cond_signal(&cond);
     } else {
-        ret = lock_protocol::NOENT;
+        ret = lock_protocol::OK;
     }
 
     pthread_mutex_unlock(&mutex);

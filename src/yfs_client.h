@@ -123,7 +123,6 @@ private:
     static std::string filename(inum);
     static inum n2i(std::string);
     int add_file_to_dir(uint32_t dir_inode_num, uint32_t file_inode_num, const char *filename);
-    int remove_file_from_dir(uint32_t dir, const char *name);
     int remove_file_from_dir(uint32_t dir, inum ino);
     int add_stat(action_t type, inum ino, inum parent, const char *filename, std::string &last_content, filestat *last_attr);
     int stats_read();
@@ -162,8 +161,8 @@ public:
     int create_symlink(inum parent, const char *src, const char *dest, inum &ino_out);
     int read_symlink(inum link_number, std::string & buf_out);
 
-    int readdir(inum, std::list<dirent> &);
-    int writedir(inum, std::list<dirent>);
+    int readdir(inum ino, std::list<dirent> &);
+    int writedir(inum ino, std::list<dirent> list);
     int readfile(inum, std::string &str);
     int write(inum, size_t, off_t, const char *, size_t &);
     int read(inum, size_t, off_t, std::string &);

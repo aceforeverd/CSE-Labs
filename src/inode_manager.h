@@ -11,9 +11,11 @@
 #include <iostream>
 #include <stdint.h>
 #include <ctime>
+#include <map>
 
-#define DISK_SIZE  (1024*1024*16)
-#define BLOCK_SIZE 512
+#define DISK_SIZE  (1024*1024*96)
+#define BLOCK_SIZE 2048
+#define REAL_SIZE (BLOCK_SIZE / 4)
 #define BLOCK_NUM  (DISK_SIZE/BLOCK_SIZE)
 
 typedef uint32_t blockid_t;
@@ -42,10 +44,11 @@ class block_manager {
     private:
         disk *d;
         std::map<uint32_t, int> using_blocks;
-        blockid_t first_block;
 
-        bool is_free(uint32_t pos);
+        bool is_free(uint32_t id);
         int alloc_block_by_id(uint32_t id);
+
+        blockid_t first_block;
         blockid_t next_alloc;
     public:
         block_manager();
@@ -54,7 +57,10 @@ class block_manager {
         uint32_t alloc_block();
         void free_block(uint32_t id);
         void read_block(uint32_t id, char *buf);
-        void write_block(uint32_t id, const char *buf);
+        void write_block(uint32_t id, char *buf);
+
+        void read_block_direct(uint32_t id, char *buf);
+        void write_block_direct(uint32_t id, char *buf);
 };
 
 // inode layer -----------------------------------------
@@ -63,19 +69,22 @@ class block_manager {
 
 // Inodes per block.
 #define IPB    1
-//(BLOCK_SIZE / sizeof(struct inode))
+/* BLOCKS PER INODE */
+#define BPI 1
 
 // Block containing inode i
-#define IBLOCK(i, nblocks)     ((nblocks)/BPB + (i)/IPB + 3)
+#define IBLOCK(i, nblocks)     ((nblocks) / BPB + (i) * BPI - 1 + 3)
 
 // Bitmap bits per block
-#define BPB           (BLOCK_SIZE * 8)
+#define BPB           (REAL_SIZE * 8)
 
 // Block containing bit for block b
 #define BBLOCK(b) ((b) / BPB + 2)
 
-#define NDIRECT 32
+#define NDIRECT 48
+#define NINDIRECT_META 1
 #define NINDIRECT (BLOCK_SIZE / sizeof(unsigned int))
+#define REAL_NINDIRECT (NINDIRECT / 4)
 #define MAXFILE (NDIRECT + NINDIRECT)
 
 typedef struct inode {
@@ -93,7 +102,7 @@ typedef struct inode {
     unsigned short mode;
     unsigned short uid;
     unsigned short gid;
-    blockid_t blocks[NDIRECT+1];   // Data block addresses
+    blockid_t blocks[NDIRECT + NINDIRECT_META];   // Data block addresses
 } inode_t;
 
 class inode_manager {
@@ -126,6 +135,9 @@ class inode_manager {
 
         /* directory operations */
 };
+
+
+void* test_daemon(void* arg);
 
 #endif
 

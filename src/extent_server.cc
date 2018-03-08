@@ -23,7 +23,7 @@ int extent_server::create(uint32_t type, extent_protocol::extentid_t &id)
     return extent_protocol::OK;
 }
 
-int extent_server::put(extent_protocol::extentid_t id, std::string buf, int &)
+int extent_server::put(extent_protocol::extentid_t id, std::string buf, int &r)
 {
     id &= 0x7fffffff;
 

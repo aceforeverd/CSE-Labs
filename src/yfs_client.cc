@@ -1,8 +1,6 @@
 // yfs client.  implements FS operations using extent and lock server
 #include "yfs_client.h"
 #include "extent_client.h"
-#include "lock_client.h"
-#include <sstream>
 #include <iostream>
 #include <stdio.h>
 #include <unistd.h>
@@ -45,11 +43,13 @@ yfs_client::yfs_client(std::string extent_dst, std::string lock_dst, const char*
         perror("error init root dir"); // XYB: init root dir
     }
 
+    /*
     this->commits_file = std::string("commits");
     this->stat_file = std::string("stats");
     this->log_file = std::string("log");
 
     init();
+     */
 }
 
 yfs_client::~yfs_client() {
@@ -115,10 +115,8 @@ bool yfs_client::isfile(inum i_node_num)
     }
 
     if (a.type == extent_protocol::T_FILE) {
-        printf("isfile: %lld is a file\n", i_node_num);
         return true;
     }
-    printf("isfile: %lld is a dir\n", i_node_num);
     return false;
 }
 
@@ -244,9 +242,11 @@ int yfs_client::setattr(inum ino, filestat st, unsigned long to_set) {
     lc->acquire(ino);
 
     filestat_t fi;
+    /*
     if (get_file_stat(ino) == LATEST) {
         getstat(ino, fi);
     }
+    */
 
     int r = OK;
     std::string buf;
@@ -285,7 +285,7 @@ int yfs_client::setattr(inum ino, filestat st, unsigned long to_set) {
         goto release;
     }
 
-    add_stat(CHANGE, ino, 0, NULL, ls, &fi);
+    // add_stat(CHANGE, ino, 0, NULL, ls, &fi);
 
 
     release:
@@ -295,17 +295,12 @@ int yfs_client::setattr(inum ino, filestat st, unsigned long to_set) {
 
 int yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
 {
-    /*
-     * your lab2 code goes here.
-     * note: lookup is what you need to check if file exist;
-     * after create file or dir, you must remember to modify the parent infomation.
-     */
     lc->acquire(parent);
+    printf("yfs_client::create: creating %d/%s\n", parent, name);
     /* check parent is diectory */
     int r = OK;
     bool found = false;
     inum ino;
-    std::string ls = "";
 
     if (!isdir(parent)) {
         std::cerr << "parent is not a directory" << std::endl;
@@ -325,10 +320,14 @@ int yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out
         r = IOERR;
         goto release;
     }
+    lc->release(parent);
 
-    this->add_file_to_dir((uint32_t)parent, (uint32_t)ino_out, name);
+    add_file_to_dir((uint32_t)parent, (uint32_t)ino_out, name);
 
-    this->add_stat(ADD, ino_out, parent, name, ls, NULL);
+    lc->acquire(parent);
+    printf("yfs_client::create: created %d/%s\n", parent, name);
+
+    // this->add_stat(ADD, ino_out, parent, name, ls, NULL);
 
     release:
     lc->release(parent);
@@ -362,7 +361,9 @@ int yfs_client::create_symlink(inum parent, const char *src, const char *dest, i
         goto release;
     }
 
+    lc->release(parent);
     this->add_file_to_dir(parent, ino_out, dest);
+    lc->acquire(parent);
 
     release:
     lc->release(parent);
@@ -379,36 +380,41 @@ int yfs_client::read_symlink(inum link_number, std::string &buf_out) {
 int yfs_client::add_file_to_dir(uint32_t dir_inode_num,
                                 uint32_t file_inode_num,
                                 const char *filename) {
-    bool found = false;
-    inum ino_out;
-    this->lookup(dir_inode_num, filename, found, ino_out);
-    if (found) {
-        return EXIST;
-    }
+    lc->acquire(dir_inode_num);
+    lc->acquire(file_inode_num);
+
+    /*
+     * std::string buf;
+     * this->ec->get(dir_inode_num, buf);
+
+     * std::stringstream ss;
+     * ss << file_inode_num << " " << strlen(filename) << " " << filename << " ";
+     * buf.append(ss.str());
+     * this->ec->put(dir_inode_num, buf);
+     */
 
     std::list<dirent> dir_list;
     this->readdir(dir_inode_num, dir_list);
+
     dirent_t dir_obj;
     dir_obj.inum = file_inode_num;
     dir_obj.name = std::string(filename);
-    dir_list.push_back(dir_obj);
-
-    this->writedir(dir_inode_num, dir_list);
-    return OK;
-}
-
-int yfs_client::remove_file_from_dir(uint32_t dir, const char *name) {
-    std::list<dirent> list;
-    this->readdir(dir, list);
-
-    std::list<dirent_t>::iterator is;
-    for (std::list<dirent_t>::iterator it = list.begin(); it != list.end(); it ++) {
-        if (it->name == name) {
-            is = it;
+    bool found = false;
+    for (std::list<dirent>::iterator it = dir_list.begin(); it != dir_list.end(); it++) {
+        if (it->name.compare(dir_obj.name) == 0) {
+            found = true;
+            break;
         }
     }
-    list.erase(is);
-    this->writedir(dir, list);
+    if (!found) {
+        dir_list.push_back(dir_obj);
+    }
+
+    this->writedir(dir_inode_num, dir_list);
+
+    lc->release(file_inode_num);
+    lc->release(dir_inode_num);
+
     return OK;
 }
 
@@ -603,11 +609,6 @@ void yfs_client::get_attr(std::stringstream &ss, filestat &st) {
 
 int yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
 {
-    /*
-     * your lab2 code goes here.
-     * note: lookup is what you need to check if directory exist;
-     * after create file or dir, you must remember to modify the parent infomation.
-     */
     lc->acquire(parent);
 
     int r = OK;
@@ -631,8 +632,11 @@ int yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
         r = IOERR;
         goto release;
     }
+    lc->release(parent);
 
     this->add_file_to_dir(parent, ino_out, name);
+
+    lc->release(parent);
 
     release:
     lc->release(parent);
@@ -668,18 +672,17 @@ int yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out
 
 int yfs_client::readdir(inum dir, std::list<dirent> &list)
 {
-    /*
-     * your lab2 code goes here.
-     * note: you should parse the dirctory content using your defined format,
-     * and push the dirents to the list.
-     */
     std::string buf;
     ec->get(dir, buf);
 
+    if (buf.size() == 0) {
+        return OK;
+    }
+
+    printf("readdir: buf: %s\n", buf.c_str());
     std::stringstream ss(buf);
     dirent_t dir_obj;
 
-    list.clear();
     size_t file_length;
     while (ss >> dir_obj.inum >> file_length) {
         /* skip one space */
@@ -688,29 +691,27 @@ int yfs_client::readdir(inum dir, std::list<dirent> &list)
         char tmp[file_length + 1];
         ss.read(tmp, file_length);
         tmp[file_length] = '\0';
-        dir_obj.name = std::string(tmp);
+        dir_obj.name = std::string(tmp, file_length);
         if (dir_obj.inum > 0) {
             list.push_back(dir_obj);
         }
 
         /* skip end character '\n' */
-        ss.get();
+        // ss.get();
     }
 
     return OK;
 }
 
 int yfs_client::writedir(inum ino, std::list<dirent> list) {
-    std::cout << "list to write into dir" << std::endl;
-    echo_dir_list(list);
 
     std::stringstream ss(" ");
     for (std::list<dirent>::iterator dir_obj = list.begin(); dir_obj != list.end(); dir_obj ++) {
         ss << dir_obj->inum << " " << dir_obj->name.length()
-                                  << " " << dir_obj->name << "\n";
-        std::cout << "buf_tmp & buf: " << ss.str() << std::endl;
+                                  << " " << dir_obj->name << " ";
     }
 
+    printf("writedir: the write buf: \n%s\n", ss.str().c_str());
     if (ec->put(ino, ss.str()) != extent_protocol::OK) {
         std::cerr << "failed to update dir list" << std::endl;
         return IOERR;
@@ -753,17 +754,14 @@ int yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
 int yfs_client::write(inum ino, size_t size, off_t off, const char *data,
                   size_t &bytes_written)
 {
-    /*
-     * your lab2 code goes here.
-     * note: write using ec->put().
-     * when off > length of original file, fill the holes with '\0'.
-     */
     lc->acquire(ino);
 
+    /*
     std::string last_content = "";
     if (get_file_stat(ino) == LATEST) {
         readfile(ino, last_content);
     }
+     */
 
     int r = OK;
     size_t length;
@@ -795,7 +793,7 @@ int yfs_client::write(inum ino, size_t size, off_t off, const char *data,
     }
     bytes_written = size;
 
-    add_stat(MODIFY, ino, 0, NULL, last_content, NULL);
+    // add_stat(MODIFY, ino, 0, NULL, last_content, NULL);
 
     release:
     lc->release(ino);
@@ -821,8 +819,10 @@ int yfs_client::unlink(inum parent, const char *name)
     if (!found) {
         std::cerr << "file name = " << name << "not found" << std::endl;
         r = NOENT;
-        goto release;
+        goto release2;
     }
+
+    lc->acquire(file);
 
     if (isdir(file)) {
         /* currently not support remove dir */
@@ -839,9 +839,11 @@ int yfs_client::unlink(inum parent, const char *name)
     }
     this->remove_file_from_dir(parent, file);
     printf("!!!!unlinking: add stat: filename: %s content: %s, len: %zu\n", name, old_content.c_str(), old_content.size());
-    this->add_stat(DELETE, file, parent, name, old_content, NULL);
+    // this->add_stat(DELETE, file, parent, name, old_content, NULL);
 
     release:
+    lc->release(file);
+    release2:
     lc->release(parent);
     return r;
 }
