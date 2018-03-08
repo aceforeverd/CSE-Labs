@@ -37,6 +37,20 @@ void disk::write_block(blockid_t id, const char *buf)
 }
 
 // block layer -----------------------------------------
+// The layout of disk should be like this:
+// |<-sb->|<-free block bitmap->|<-inode table->|<-data->|
+block_manager::block_manager()
+{
+    d = new disk();
+
+    // format the disk
+    sb.size = DISK_SIZE;
+    sb.nblocks = BLOCK_NUM;
+    sb.ninodes = INODE_NUM;
+    first_block = sb.nblocks / (BPB) + INODE_NUM + 3;
+
+    this->next_alloc = first_block;
+}
 
 int block_manager::alloc_block_by_id(uint32_t id) {
     char buf[BLOCK_SIZE];
@@ -58,18 +72,9 @@ int block_manager::alloc_block_by_id(uint32_t id) {
 // Allocate a free disk block.
 blockid_t block_manager::alloc_block()
 {
-    /*
-     * your lab1 code goes here.
-     * note: you should mark the corresponding bit in block bitmap when alloc.
-     * you need to think about which block you can start to be allocated.
-
-     *hint: use macro IBLOCK and BBLOCK.
-     use bit operation.
-     remind yourself of the layout of disk.
-     */
     uint32_t original_next = this->next_alloc;
     while (true) {
-        if (this->is_free(this->next_alloc)) {
+        if (this->is_free(this->next_alloc) && next_alloc > first_block) {
             this->alloc_block_by_id(this->next_alloc);
             this->next_alloc ++;
             return this->next_alloc - 1;
@@ -112,21 +117,6 @@ void block_manager::free_block(uint32_t id)
     buf[B_pos] = (char)bit_set.to_ulong();
     this->write_block(BBLOCK(id), buf);
     this->next_alloc = id;
-}
-
-// The layout of disk should be like this:
-// |<-sb->|<-free block bitmap->|<-inode table->|<-data->|
-block_manager::block_manager()
-{
-    d = new disk();
-
-    // format the disk
-    sb.size = DISK_SIZE;
-    sb.nblocks = BLOCK_NUM;
-    sb.ninodes = INODE_NUM;
-    first_block = sb.nblocks / (BPB) + INODE_NUM + 3;
-
-    this->next_alloc = first_block;
 }
 
 void block_manager::read_block(uint32_t id, char *buf)
